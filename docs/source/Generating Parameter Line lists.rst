@@ -1,10 +1,10 @@
-Generating Parameter Line lists 
+Generating Parameter Line lists
 ===============================
 
 Parameter Line list Overview
 ++++++++++++++++++++++++++++
 
-The MATS program uses a spectroscopic line list that varies from the traditional HITRAN and HAPI formats to accomodate the full HTP parameterization including temperature dependencies for all parameters (other than the correlation parameter and nearest neighbor line-mixing).  The spectroscopic line list format has rows that correspond to each molecular transition and columns that correspond to the various HTP parameters.  The necessary column headers are below, where there needs to be a column for each parameter for each diluent (ie. air, self) in the dataset. Additionally, there needs to be a line-mixing term for each nominal temperature in the dataset, where the nominal temperature is the included as the suffix of the column header.  
+The MATS program uses a spectroscopic line list that varies from the traditional HITRAN and HAPI formats to accomodate the full HTP parameterization including temperature dependencies for all parameters (other than the correlation parameter and nearest neighbor line-mixing).  The spectroscopic line list format has rows that correspond to each molecular transition and columns that correspond to the various HTP parameters.  The necessary column headers are below, where there needs to be a column for each parameter for each diluent (ie. air, self) in the dataset. Additionally, there needs to be a line-mixing term for each nominal temperature in the dataset, where the nominal temperature is the included as the suffix of the column header.
 	* molec_id: HITRAN molecule id number
 	* local_iso_id: HITRAN local isotope id number
 	* nu: line center (:math:`cm^{-1}`)
@@ -20,13 +20,13 @@ The MATS program uses a spectroscopic line list that varies from the traditional
 	* n_delta2_diluent: the coefficient of the temperature dependence of the speed-dependent shift NOTE: This is the temperature dependence of the speed-dependent shift not the temperature dependence of the ratio of the speed-dependent shift to the pressure shift
 	* nuVC_diluent: Dicke narrowing term (:math:`\frac{cm^{-1}}{atm}`) at reference temperature and pressure
 	* n__nuVC_diluent:  coefficient of the temperature dependence of the Dicke narrowing term
-	* eta_diluent:  correlation parameter 
+	* eta_diluent:  correlation parameter
 	* y_diluent_nominaltemp: line mixing term (:math:`\frac{cm^{-1}}{atm}`) NOTE: As currently written , this doesn't have a temperature dependence, so there is a different column for each nominal temperature.
 
 Generating Parameter Line list from HITRAN
 ++++++++++++++++++++++++++++++++++++++++++
 
-The parameter line list .csv file can be generated manually, but `this notebook <https://github.com/usnistgov/MATS/blob/master/MATS/HITRAN_to_Dataframe.ipynb>`_ generates a parameter list using the `HITRAN Application Programming Interface (HAPI) <https://hitran.org/hapi/>`_.  The overview below walks through this notebook.  
+The parameter line list .csv file can be generated manually, but `this notebook <https://github.com/usnistgov/MATS/blob/master/MATS/HITRAN_to_Dataframe.ipynb>`_ generates a parameter list using the `HITRAN Application Programming Interface (HAPI) <https://hitran.org/hapi/>`_.  The overview below walks through this notebook.
 
 Imports
 -------
@@ -39,7 +39,7 @@ Import the numpy, pandas, os, and sys packages.  Set pandas dataframe to show al
    pd.set_option("display.max_rows", 101)
    import os, sys
 
-Optional imports include matplotlib and seaborn for plotting.   
+Optional imports include matplotlib and seaborn for plotting.
 
 .. code:: ipython3
 
@@ -48,14 +48,14 @@ Optional imports include matplotlib and seaborn for plotting.
    sns.set_style("whitegrid")
    sns.set_style("ticks")
    sns.set_context("poster")
-   
+
 Add location of hapi.py file to system path
 
 .. code:: ipython3
 
    sys.path.append(r'C:\Users\Documents\Python Scripts\HAPI')#Add hapi.py folder location to system path
    from hapi import *
-   
+
 Set working file location
 
 .. code:: ipython3
@@ -71,8 +71,8 @@ HAPI provides a dictionary called ISO_ID, where the global isotope id acts as th
 .. code:: ipython3
 
    print_iso_id()
- 
-.. parsed-literal:: 
+
+.. parsed-literal::
 
 
    The dictionary "ISO_ID" contains information on "global" IDs of isotopologues in HITRAN
@@ -213,73 +213,83 @@ To select the relevant information from HITRAN you will need to provide:
 * the minimum and maximum wavenumbers
 * the minimum line intensity of interest
 
-The example below would generate a HITRAN table named 'CO' that contains all :math:`CO` isotopes (global isotopes 26 - 31) and the most abundant :math:`CO_{2}` isotope (global isotope 7) in the spectral region between 6200 and 6500 :math:`cm^{-1}` that have line intensities greater than 1e-30 :math:`\frac{cm^{-1}}{molecule \cdot cm^{-2}}`. 
+The example below would generate a HITRAN table named 'CO' that contains all :math:`CO` isotopes (global isotopes 26 - 31) and the most abundant :math:`CO_{2}` isotope (global isotope 7) in the spectral region between 6200 and 6500 :math:`cm^{-1}` that have line intensities greater than 1e-30 :math:`\frac{cm^{-1}}{molecule \cdot cm^{-2}}`.
 
 .. code:: ipython3
 
    tablename = 'CO'
    global_isotopes = [26, 27, 28, 29, 30,31,7]
-   wave_min = 6200 
-   wave_max = 6500 
+   wave_min = 6200
+   wave_max = 6500
    intensity_cutoff = 1e-30
 
 
 Generate HITRAN and Initial Guess Line lists from HAPI Call
 -----------------------------------------------------------
-The next section of the example contains a function and function call where the output is a MATS compatible line list. 
+The next section of the example contains a function and function call where the output is a MATS compatible line list.
 
 
 .. code-block:: python
 
-   def HITRANlinelist_to_csv(isotopes, minimum_wavenumber, maximum_wavenumber, tablename = 'tmp', filename = tablename, temperature = 296): 
-		
-		"""Generates two .csv files containing information available from HTIRAN.  
-		The first line list matches the information available from HITRAN (_HITRAN.csv) 
-		and the second supplements the HITRAN information with theoretical values and translates into MATS input format (_initguess.csv)
+    def HITRANlinelist_to_csv(
+        isotopes,
+        minimum_wavenumber,
+        maximum_wavenumber,
+        tablename="tmp",
+        filename=tablename,
+        temperature=296,
+    ):
 
-		Outline
+        """Generates two .csv files containing information available from HTIRAN.
+        The first line list matches the information available from HITRAN (_HITRAN.csv)
+        and the second supplements the HITRAN information with theoretical values and translates into MATS input format (_initguess.csv)
 
-		1. Gets a line list from HITRAN and saves all available parameters to filename_HITRAN.csv
-		2. Goes through the data provided from HITRAN and collects the highest order line shape information.
-		3.  Where there is missing information for the complete HTP linelist set to 0 or make the following substitutions
-			- for missing diluent information fill values with air
-			- set missing shift temperature dependences equal to 0 (linear temperature dependence)
-			- calculate the SD_gamma based on theory 
-			- set the gamma_2 temperature exponent equal to the gamma0 temperature exponent
-			- set the delta_2 temperature exponent equal to the delta0 temperature exponent
-			- set the dicke narrowing temperature exponent to 1
-		4. Save the supplemented MATS formatted HITRAN information as filename_initguess.csv
+        Outline
+
+        1. Gets a line list from HITRAN and saves all available parameters to filename_HITRAN.csv
+        2. Goes through the data provided from HITRAN and collects the highest order line shape information.
+        3.  Where there is missing information for the complete HTP linelist set to 0 or make the following substitutions
+                - for missing diluent information fill values with air
+                - set missing shift temperature dependences equal to 0 (linear temperature dependence)
+                - calculate the SD_gamma based on theory
+                - set the gamma_2 temperature exponent equal to the gamma0 temperature exponent
+                - set the delta_2 temperature exponent equal to the delta0 temperature exponent
+                - set the dicke narrowing temperature exponent to 1
+        4. Save the supplemented MATS formatted HITRAN information as filename_initguess.csv
 
 
-		Parameters
-		----------
-		isotopes : list
-			list of the HITRAN global isotope numbers to include in the HAPI call
-		minimum_wavenumber : float
-			minimum line center (cm-1) to include in the HAPI call.
-		maximum_wavenumber : float
-			maximum line center (cm-1) to include in the HAPI call.
-		tablename : str, optional
-			desired name for table generated from HAPI call. The default is 'tmp'.
-		filename : str, optional
-			acts as a base filename for the .csv files generated. The default is tablename.
-		temperature : float, optional
-			Nominal temperature of interest.  HITRAN breaks-up the HTP line parameters into temperature regimes.  
-			This allows for selection of the most approriate parameter information. The default is 296.
+        Parameters
+        ----------
+        isotopes : list
+                list of the HITRAN global isotope numbers to include in the HAPI call
+        minimum_wavenumber : float
+                minimum line center (cm-1) to include in the HAPI call.
+        maximum_wavenumber : float
+                maximum line center (cm-1) to include in the HAPI call.
+        tablename : str, optional
+                desired name for table generated from HAPI call. The default is 'tmp'.
+        filename : str, optional
+                acts as a base filename for the .csv files generated. The default is tablename.
+        temperature : float, optional
+                Nominal temperature of interest.  HITRAN breaks-up the HTP line parameters into temperature regimes.
+                This allows for selection of the most approriate parameter information. The default is 296.
 
-		Returns
-		-------
-		linelist_select : dataframe
-			pandas dataframe corresponding to the HITRAN information supplemented by theoretical values/assumptions.
-		filename_HITRAN.csv : .csv file
-			file corresponding to available HITRAN information
-		filename_initguess.csv : .csv file
-			file corresponding to available HITRAN information supplemented by theory and assumptions in MATS format
+        Returns
+        -------
+        linelist_select : dataframe
+                pandas dataframe corresponding to the HITRAN information supplemented by theoretical values/assumptions.
+        filename_HITRAN.csv : .csv file
+                file corresponding to available HITRAN information
+        filename_initguess.csv : .csv file
+                file corresponding to available HITRAN information supplemented by theory and assumptions in MATS format
 
-		"""
+        """
 
-The line mixing term MATS needs has a subscript with the nominal temperatures included in the dataset. These columns can be added by hand to the .csv by copying, pasting, and renaming the generated line mixing column.  Alternatively, the following code can be added to do this in the script for each nominal temperature.
+The line mixing term MATS needs has a subscript with the nominal temperatures included in the dataset. These columns can be added by hand to the .csv by copying, pasting, and renaming the generated line mixing column.  Alternatively, the following code:
 
 .. code-block:: python
 
-   DF['y_air_296'] = DF['y_air'].copy()
+    DF["y_air_296"] = DF["y_air"].copy()
+
+
+can be added to do this in the script for each nominal temperature.

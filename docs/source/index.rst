@@ -17,13 +17,13 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   
+
    Getting Started
    MATS Summary
    Generating Parameter Line lists
    MATS Example using Experimental and Synthetic Data
    MATS
-   
+
 
 
 Legal
@@ -49,7 +49,7 @@ Links
 
 `NIST Home Page <http://nist.gov>`_
 
-  
+
 Indices and tables
 ==================
 

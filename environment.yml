@@ -16,3 +16,6 @@ dependencies:
   # optional
   - qgrid
   # - jupyter
+  - pip
+  - pip:
+      - gpflow

@@ -67,4 +67,5 @@ class LoadExampleData(object):
         return self._get_file(name)
 
 
-global_loader = LoadExampleData()
+# Global example data loader
+exampledata = LoadExampleData()

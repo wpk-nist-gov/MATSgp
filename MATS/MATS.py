@@ -374,7 +374,7 @@ class Spectrum:
         self.diluent_sum_check()  # Makes sure that the diluent contributions sum to 1
 
         # Defined from contents of file
-        file_contents = pd.read_csv(self.filename + ".csv", float_precision="High")
+        file_contents = pd.read_csv(self.filename + ".csv", float_precision="high")
         self.pressure = file_contents[self.pressure_column].mean() / 760
         self.temperature = file_contents[self.temperature_column].mean() + 273.15
         if self.input_freq:
@@ -3859,7 +3859,7 @@ class Fit_DataSet:
         wing_wavenumbers=50,
         wing_method="wing_cutoff",
         xtol=1e-7,
-        maxfev=2000,
+        max_nfev=2000,
         ftol=1e-7,
     ):
         """Uses the lmfit minimizer to do the fitting through the simulation model function.
@@ -3877,7 +3877,7 @@ class Fit_DataSet:
             Provides choice between the wing_cutoff and wing_wavenumbers line cut-off options. The default is 'wing_cutoff'.
         xtol : float, optional
              Absolute error in xopt between iterations that is acceptable for convergence. The default is 1e-7.
-        maxfev : float, optional
+        max_nfev : float, optional
             DESCRIPTION. The default is 2000.
         ftol : The maximum number of calls to the function., optional
             Absolute error in func(xopt) between iterations that is acceptable for convergence.. The default is 1e-7.
@@ -3892,7 +3892,7 @@ class Fit_DataSet:
             self.simulation_model,
             params,
             xtol=xtol,
-            maxfev=maxfev,
+            max_nfev=max_nfev,
             ftol=ftol,
             fcn_args=(wing_cutoff, wing_wavenumbers, wing_method),
         )

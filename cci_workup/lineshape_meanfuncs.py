@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 import gpflow
+import pandas as pd
 
 from hapi import PYTIPS2017, molecularMass
 
@@ -36,7 +37,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                       'delta0':-0.01,
                       'sd_gamma':0.1,
                       'sd_delta':0.0,
-                      'nuVC':0.0,
+                      'nuvc':0.0,
                       'eta':0.0,
                       'y':0.0
                      }
@@ -47,7 +48,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                           'n_delta0':5e-05,
                           'n_gamma2':0.63,
                           'n_delta2':0.0,
-                          'n_nuVC':1.0,
+                          'n_nuvc':1.0,
                           'mole_frac':1.0,
                          }
         #Update with passed keyword arguments
@@ -112,7 +113,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         shift0 = (delta0 + self.n_delta0*(T-self.Tref))*(P/self.Pref)
         gamma2 = sd_gamma*gamma0*(P/self.Pref)*((self.Tref/T)**self.n_gamma2)
         shift2 = (sd_delta*delta0 + self.n_delta2*(T-self.Tref))*(P/self.Pref)
-        nuVC = nuVC*(P/self.Pref)*((self.Tref/T)**self.n_nuVC)
+        nuVC = nuVC*(P/self.Pref)*((self.Tref/T)**self.n_nuvc)
         eta = eta
         return(gammaD, gamma0, gamma2, shift0, shift2, nuVC, eta)
 
@@ -150,7 +151,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         nu, sw, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta, y = self.get_dset_params(dInds,
                                                                                    ['nu', 'sw', 'gamma0',
                                                                                     'delta0', 'sd_gamma', 'sd_delta',
-                                                                                    'nuVC', 'eta', 'y'])
+                                                                                    'nuvc', 'eta', 'y'])
         line_intensity = self.environmentdependency_intensity(T, nu, sw)
         y = y*(P/self.Pref)
         params = self.get_params_at_TP(T, P, nu, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta)
@@ -161,6 +162,58 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         out = out / self.noise_scaling
         out = tf.reshape(out, (-1, 1))
         return out
+
+
+def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
+    nu_list = frame.filter(regex="nu_*\d$").values.flatten().tolist()
+    sw_list = frame.filter(regex="sw_*\d$").values.flatten().tolist()
+    #Infer number of data sets from highest number associated with nu or sw
+    n_dsets = len(nu_list)
+    param_dict = {}
+    vary_dict = {}
+    constraint_dict = {}
+    vary_dict['nu'] = bool(np.sum(frame.filter(regex="nu_*\d_vary$").values)) #Logical or, if any True, vary all
+    vary_dict['sw'] = bool(np.sum(frame.filter(regex="sw_*\d_vary$").values, dtype=bool))
+    #Loop over parameters in dataframe excluding nu and sw
+    for name, val in frame.iteritems():
+        if (name in ['molec_id', 'local_iso_id']) or ('err' in name) or ('sw' in name and not 'scale_factor' in name) or ('nu' in name and not 'VC' in name):
+            continue
+        else:
+            new_name = name.replace('_air', '').lower()
+            if 'y_296' in new_name:
+                new_name = new_name.replace('y_296', 'y')
+            if 'sw_scale_factor' in new_name:
+                new_name = new_name.replace('sw_scale_factor', 'sw_scale_fac')
+            if 'vary' in name:
+                vary_dict[new_name.replace('_vary', '')] = bool(val.values[0])
+            else:
+                param_dict[new_name] = val.values[0]
+                try:
+                    constraint_type, constraint_info = limit_factor_dict[name]
+                    if constraint_type == 'magnitude':
+                        constraint_dict[new_name] = (val.values[0] - constraint_info,
+                                                     val.values[0] + constraint_info)
+                    elif constraint_type == 'factor':
+                        constraint_dict[new_name] = (val.values[0] / constraint_info,
+                                                     val.values[0] * constraint_info)
+                except KeyError:
+                    pass
+    #Create our lineshape function
+    lineshape = LineShape(frame['molec_id'].values[0], frame['local_iso_id'].values[0],
+                          n_data_sets=n_dsets,
+                          nu=nu_list,
+                          sw=sw_list,
+                          **param_dict,
+                          **line_kwargs,
+                          constraint_dict=constraint_dict
+                          )
+    #Freeze somethings and let others vary
+    for name, val in vary_dict.items():
+        #try:
+        gpflow.set_trainable(getattr(lineshape, name), val)
+        #except AttributeError:
+        #    pass
+    return lineshape
 
 
 class Etalon(gpflow.mean_functions.MeanFunction):

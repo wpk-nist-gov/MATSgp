@@ -1,6 +1,7 @@
-import tensorflow as tf
+from typing import Optional  # , Tuple
+
 import gpflow
-from typing import Optional, Tuple
+import tensorflow as tf
 
 
 class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossMixin):
@@ -8,7 +9,7 @@ class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossM
     Avoids needing to use a VGP, which seems to complicate things.
     Y data will need to have a second column to specify which likelihood to use.
     """
-    
+
     def __init__(
         self,
         data: gpflow.models.model.RegressionData,
@@ -16,12 +17,15 @@ class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossM
         mean_function: Optional[gpflow.mean_functions.MeanFunction] = None,
         noise_variance: list = [float(1.0)],
     ):
-        likelihood = gpflow.likelihoods.SwitchedLikelihood([gpflow.likelihoods.Gaussian(variance=v) 
-                                                            for v in noise_variance])
+        likelihood = gpflow.likelihoods.SwitchedLikelihood(
+            [gpflow.likelihoods.Gaussian(variance=v) for v in noise_variance]
+        )
         _, Y_data = data
-        super().__init__(kernel, likelihood, mean_function, num_latent_gps=Y_data.shape[-1]-1)
+        super().__init__(
+            kernel, likelihood, mean_function, num_latent_gps=Y_data.shape[-1] - 1
+        )
         self.data = gpflow.models.util.data_input_to_tensor(data)
-        
+
     def maximum_log_likelihood_objective(self) -> tf.Tensor:
         return self.log_marginal_likelihood()
 
@@ -31,11 +35,13 @@ class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossM
         and I is the corresponding identity matrix.
         """
         k_diag = tf.linalg.diag_part(K)
-        
+
         ind = tf.cast(self.data[1][..., -1], tf.int32)
-        like_vars = [tf.convert_to_tensor(l.variance) for l in self.likelihood.likelihoods]
+        like_vars = [
+            tf.convert_to_tensor(x.variance) for x in self.likelihood.likelihoods
+        ]
         s_diag = tf.reshape(tf.gather(like_vars, ind), tf.shape(k_diag))
-                
+
         return tf.linalg.set_diag(K, k_diag + s_diag)
 
     def log_marginal_likelihood(self) -> tf.Tensor:
@@ -58,7 +64,10 @@ class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossM
         return tf.reduce_sum(log_prob)
 
     def predict_f(
-        self, Xnew: gpflow.models.model.InputData, full_cov: bool = False, full_output_cov: bool = False
+        self,
+        Xnew: gpflow.models.model.InputData,
+        full_cov: bool = False,
+        full_output_cov: bool = False,
     ) -> gpflow.models.model.MeanAndVariance:
         r"""
         This method computes predictions at X \in R^{N \x D} input points
@@ -83,5 +92,3 @@ class SwitchedGPR(gpflow.models.GPModel, gpflow.models.InternalDataTrainingLossM
         )  # [N, P], [N, P] or [P, N, N]
         f_mean = f_mean_zero + self.mean_function(Xnew)
         return f_mean, f_var
-    
-    

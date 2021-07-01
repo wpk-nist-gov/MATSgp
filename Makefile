@@ -56,7 +56,7 @@ clean-test: ## remove test and coverage artifacts
 .PHONY: lint pre-commit-init pre-commit-run pre-commit-run-all init
 
 lint: ## check style with flake8
-	flake8 MATS tests
+	flake8 MATSgp tests
 
 pre-commit-init: ## install pre-commit
 	pre-commit install
@@ -81,20 +81,26 @@ conda-env: ## conda create base env
 	conda env create -f environment.yml
 
 conda-dev: ## conda update development dependencies
-	conda env update -n MATS-env -f environment-dev.yml
+	conda env update -n MATSgp-env -f environment-dev.yml
 
-conda-all: conda-env conda-dev ## conda create development env
+# conda-mats:
+# 	conda env update -n MATSgp-env -f envrionment-mats.yml
+
+conda-all: conda-env conda-dev # conda-mats ## conda create development env
 
 mamba-env: ## mamba create base env
 	mamba env create -f environment.yml
 
 mamba-dev: ## mamba update development dependencies
-	mamba env update -n MATS-env -f environment-dev.yml
+	mamba env update -n MATSgp-env -f environment-dev.yml
 
-mamba-all: mamba-env mamba-dev ## mamba create development env
+# mamba-mats:
+# 	mamba env update -n MATSgp-env -f environment-mats.yml
+
+mamba-all: mamba-env mamba-dev # mamba-mats ## mamba create development env
 
 activate: ## activate base env
-	conda activate MATS-env
+	conda activate MATSgp-env
 
 
 ################################################################################
@@ -102,10 +108,10 @@ activate: ## activate base env
 ################################################################################
 .PHONY: user-venv user-autoenv-zsh user-all
 user-venv: ## create .venv file with name of conda env
-	echo MATS-env > .venv
+	echo MATSgp-env > .venv
 
 user-autoenv-zsh: ## create .autoenv.zsh files
-	echo conda activate MATS-env > .autoenv.zsh
+	echo conda activate MATSgp-env > .autoenv.zsh
 	echo conda deactivate > .autoenv_leave.zsh
 
 user-all: user-venv user-autoenv-zsh ## runs user scripts
@@ -122,7 +128,7 @@ test-all: ## run tests on every Python version with tox
 	tox -- -x -v
 
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source MATS -m pytest
+	coverage run --source MATSgp -m pytest
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html
@@ -137,7 +143,7 @@ version: ## check version of package
 ################################################################################
 .PHONY: docs serverdocs
 docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/MATS.rst
+	rm -f docs/MATSgp.rst
 	rm -f docs/modules.rst
 	rm -fr docs/generated
 	$(MAKE) -C docs clean
@@ -166,7 +172,7 @@ release-test: dist ## package and upload to test
 conda-dist: ## build conda dist (run dist and clean?)
 	mkdir conda_dist; \
 	cd cond_dist; \
-	grayskull pypi MATS ; \
+	grayskull pypi MATSgp ; \
 	conda-build .; \
 	echo 'upload now'
 

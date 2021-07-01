@@ -1,21 +1,22 @@
-name: MATS-env
+name: MATSgp-env
 channels:
   - conda-forge
   - wpk-nist
 dependencies:
   - python=3.8
-  # because using scm versioning
-  - setuptools>=38.4
-  # required packages
+  - setuptools
   - numpy
   - pandas
-  - lmfit
+  # optional?
   - matplotlib
+  # mats stuff
+  - lmfit
   - seaborn
   - scipy
-  # optional
   - qgrid
-  # - jupyter
   - pip
   - pip:
+      - git+https://github.com/wpk-nist-gov/MATS.git@cci-from-Development
+      - tensorflow
+      - tensorflow-probability
       - gpflow

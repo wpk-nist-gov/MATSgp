@@ -22,6 +22,44 @@ Gaussian process regression extension for MATS
 * Free software: NIST license
 * Documentation: https://MATSgp.readthedocs.io.
 
+Bare-bones install
+------------------
+
+To add pre-commit hooks do
+
+.. code-block:: console
+
+    $ make pre-commit-init
+
+Note that because of the pip dependencies, I've but everything for development in environment-dev.yml (instead of the main stuff in environment.yml, and only the add ons in environment-dev.yml).  To make the environment, do
+
+
+.. code-block:: console
+
+    $ make conda-dev
+
+Or, if you have mamba installed
+
+
+.. code-block:: console
+
+    $ make mamba-dev
+
+
+This will install everything, including MATS.  Note that the MATS is based off of https://github.com/wpk-nist-gov/MATS/tree/cci-from-Development/MATS
+
+
+To install MATSgp, do the following:
+
+.. code-block:: console
+
+   $ make install-dev
+
+
+
+
+
+
 
 Features
 --------

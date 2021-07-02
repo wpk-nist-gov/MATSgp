@@ -26,6 +26,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         wing_method="wing_cutoff",
         cutoff=50,
         noise_scale_factor=1.0,
+        fittable=True,
         **kwargs
     ):
 
@@ -71,27 +72,30 @@ class LineShape(gpflow.mean_functions.MeanFunction):
 
         # Set all parameters that are trainable
         for key, val in param_dict.items():
-            try:
-                low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
-                self.params[key] = gpflow.Parameter(
-                        val,
-                        dtype=tf.float64,
-                        name=key,
-                        trainable=True,
-                        transform=tfp.bijectors.SoftClip(
-                            low=low_bound, high=high_bound
-                        ),
-                    )
+            if fittable:
+                try:
+                    low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
+                    self.params[key] = gpflow.Parameter(
+                            val,
+                            dtype=tf.float64,
+                            name=key,
+                            trainable=True,
+                            transform=tfp.bijectors.SoftClip(
+                                low=low_bound, high=high_bound
+                            ),
+                        )
 
-            except KeyError:
-                self.params[key] = gpflow.Parameter(val,
-                                                    dtype=tf.float64,
-                                                    name=key,
-                                                    trainable=True)
+                except KeyError:
+                    self.params[key] = gpflow.Parameter(val,
+                                                        dtype=tf.float64,
+                                                        name=key,
+                                                        trainable=True)
+            else:
+                self.params[key] = tf.constant(val, dtype=tf.float64)
 
         # Set all other parameters
         for key, val in non_param_dict.items():
-            self.params[key] = val
+            self.params[key] = tf.constant(val, dtype=tf.float64)
 
         # Defining how cutoffs handled for all lines
         self.wing_method = wing_method
@@ -264,22 +268,25 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
     )
     # Freeze somethings and let others vary
     for name, val in vary_dict.items():
-        # try:
-        gpflow.set_trainable(lineshape.params[name], val)
-        # except AttributeError:
-        #    pass
+        if isinstance(lineshape.params[name], gpflow.Parameter):
+            gpflow.set_trainable(lineshape.params[name], val)
     return lineshape
 
 
 class Etalon(gpflow.mean_functions.MeanFunction):
     def __init__(
-        self, amplitude, period, phase, ref_wavenumber, noise_scale_factor=1.0
+        self, amplitude, period, phase, ref_wavenumber, noise_scale_factor=1.0, fittable=True
     ):
         # Note that if multidimensional, assumes different values for different datasets
-        self.params = {'amp':gpflow.Parameter(amplitude, dtype=tf.float64, name='amp', trainable=True),
-                       'period':gpflow.Parameter(period, dtype=tf.float64, name='period', trainable=True),
-                       'phase':gpflow.Parameter(phase, dtype=tf.float64, name='phase', trainable=True),
-                       'ref_wave':gpflow.Parameter(ref_wavenumber, dtype=tf.float64, name='ref_wave', trainable=False)}
+        self.params = {}
+        for name, val  in [['amp', amplitude],
+                           ['period', period],
+                           ['phase', phase],
+                           ['ref_wave', ref_wavenumber]]:
+            if fittable:
+                self.params[name] = gpflow.Parameter(val, dtype=tf.float64, name=name, trainable=True)
+            else:
+                self.params[name] = val
         self.noise_scaling = noise_scale_factor
 
     def get_dset_params(self, dInds, param_names):

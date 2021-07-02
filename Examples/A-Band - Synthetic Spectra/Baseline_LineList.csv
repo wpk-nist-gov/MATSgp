@@ -1,0 +1,5 @@
+Spectrum Number,Pressure,Pressure_err,Pressure_vary,Segment Number,Temperature,Temperature_err,Temperature_vary,baseline_a,baseline_a_err,baseline_a_vary,molefraction_O2,molefraction_O2_err,molefraction_O2_vary,x_shift,x_shift_err,x_shift_vary
+1.0,0.0263157894736842,0,False,0.0,298.15,0,False,3.2496953858283424e-06,5.56307752330182e-06,True,0.002022,0,False,0.0,0,False
+2.0,0.0526315789473684,0,False,0.0,298.15,0,False,1.4937032468804022e-05,5.5881119169002685e-06,True,0.002022,0,False,0.0,0,False
+3.0,0.0789473684210526,0,False,0.0,298.15,0,False,3.95423977365368e-05,5.660143406276735e-06,True,0.002022,0,False,0.0,0,False
+4.0,0.1052631578947368,0,False,0.0,298.15,0,False,6.61529462184544e-05,5.8223544803463395e-06,True,0.002022,0,False,0.0,0,False

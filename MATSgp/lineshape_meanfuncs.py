@@ -234,27 +234,27 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
             if "sw_scale_factor" in new_name:
                 new_name = new_name.replace("sw_scale_factor", "sw_scale_fac")
             if "vary" in name:
-                vary_dict[new_name.replace("_vary", "")] = bool(val.values[0])
+                vary_dict[new_name.replace("_vary", "")] = bool(val)
             else:
-                param_dict[new_name] = val.values[0]
+                param_dict[new_name] = val
                 try:
                     constraint_type, constraint_info = limit_factor_dict[name]
                     if constraint_type == "magnitude":
                         constraint_dict[new_name] = (
-                            val.values[0] - constraint_info,
-                            val.values[0] + constraint_info,
+                            val - constraint_info,
+                            val + constraint_info,
                         )
                     elif constraint_type == "factor":
                         constraint_dict[new_name] = (
-                            val.values[0] / constraint_info,
-                            val.values[0] * constraint_info,
+                            val / constraint_info,
+                            val * constraint_info,
                         )
                 except KeyError:
                     pass
     # Create our lineshape function
     lineshape = LineShape(
-        frame["molec_id"].values[0],
-        frame["local_iso_id"].values[0],
+        frame["molec_id"],
+        frame["local_iso_id"],
         n_data_sets=n_dsets,
         nu=nu_list,
         sw=sw_list,
@@ -273,23 +273,49 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
 
 class Etalon(gpflow.mean_functions.MeanFunction):
     def __init__(
-        self, amplitude, frequency, phase, ref_wavenumber, noise_scale_factor=1.0
+        self, amplitude, period, phase, ref_wavenumber, noise_scale_factor=1.0
     ):
-        # Fixed parameters for now, can go back and make optimizable later
-        self.amp = amplitude
-        self.freq = frequency
-        self.phase = phase
-        self.ref_wave = ref_wavenumber
+        # Note that if multidimensional, assumes different values for different datasets
+        self.params = {'amp':gpflow.Parameter(amplitude, dtype=tf.float64, name='amp', trainable=True),
+                       'period':gpflow.Parameter(period, dtype=tf.float64, name='period', trainable=True),
+                       'phase':gpflow.Parameter(phase, dtype=tf.float64, name='phase', trainable=True),
+                       'ref_wave':gpflow.Parameter(ref_wavenumber, dtype=tf.float64, name='ref_wave', trainable=False)}
         self.noise_scaling = noise_scale_factor
 
+    def get_dset_params(self, dInds, param_names):
+        # Use indices of dataset for each data point to determine parameters for all data points
+        # Returns tensors of same size as dInds for each adjustable parameter in param_names (list of strings)
+        # Where the appropriate dataset-dependent parameter is used at each index
+        param_list = []
+        for param in param_names:
+            this_param = self.params[param]
+            if len(this_param.shape) > 0:
+                if this_param.shape[0] > 1:
+                    # Have different parameter for every dataset
+                    param_list.append(tf.gather(this_param, dInds))
+                else:
+                    # Parameter that is 1D used for all datasets
+                    param_list.append(tf.gather(this_param, np.zeros_like(dInds)))
+            else:
+                # Scalar parameter used for all datasets
+                param_list.append(tf.fill(dInds.shape, this_param))
+        return param_list
+
     def __call__(self, xTP):
+        xTP = np.array(xTP, dtype=np.float64)
         wavenumbers = xTP[:, 0]
-        etalon_model = self.amp * tf.math.sin(
-            (2 * np.pi * self.freq) * (wavenumbers - self.ref_wave) + self.phase
+        dInds = np.array(xTP[:, 3], dtype=np.int32)
+        amps, periods, phases, ref_waves = self.get_dset_params(dInds, list(self.params.keys()))
+        etalon_model = amps * tf.math.sin(
+            (2 * np.pi * periods) * (wavenumbers - ref_waves) + phases
         )
         etalon_model = etalon_model / self.noise_scaling
         etalon_model = tf.reshape(etalon_model, (-1, 1))
         return etalon_model
+
+
+#Should add function to create etalons from baseline parameter list
+#Though with various kernels, should be able to take care of etalons without specifying...
 
 
 class ComboMeanFunc(gpflow.mean_functions.MeanFunction):

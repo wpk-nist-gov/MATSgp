@@ -81,7 +81,7 @@ conda-env: ## conda create base env
 	conda env create -f environment.yml
 
 conda-dev: ## conda update development dependencies
-	conda env update -n MATSgp-env -f environment-dev.yml
+	conda env create -n MATSgp-env -f environment-dev.yml
 
 # conda-mats:
 # 	conda env update -n MATSgp-env -f envrionment-mats.yml
@@ -92,7 +92,7 @@ mamba-env: ## mamba create base env
 	mamba env create -f environment.yml
 
 mamba-dev: ## mamba update development dependencies
-	mamba env update -n MATSgp-env -f environment-dev.yml
+	mamba env create -n MATSgp-env -f environment-dev.yml
 
 # mamba-mats:
 # 	mamba env update -n MATSgp-env -f environment-mats.yml

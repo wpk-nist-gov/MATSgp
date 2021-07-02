@@ -11,6 +11,7 @@ dependencies:
   - matplotlib
   # mats stuff
   - lmfit
+  - sympy
   - seaborn
   - scipy
   - qgrid

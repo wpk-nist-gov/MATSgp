@@ -20,6 +20,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         self,
         molec_id,
         iso,
+        mole_fraction=1.0,
         n_data_sets=1,
         constraint_dict={},
         wing_method="wing_cutoff",
@@ -31,6 +32,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         # Molecule/line of interest
         self.molec_id = molec_id
         self.iso = iso
+        self.mole_frac = mole_fraction
 
         # Defaults, think diluent defaults are right for air?
         # Trainable parameters during optimization
@@ -54,7 +56,6 @@ class LineShape(gpflow.mean_functions.MeanFunction):
             "n_gamma2": 0.63,
             "n_delta2": 0.0,
             "n_nuvc": 1.0,
-            "mole_frac": 1.0,
         }
         # Update with passed keyword arguments
         for param_name in kwargs.keys():
@@ -65,14 +66,14 @@ class LineShape(gpflow.mean_functions.MeanFunction):
             else:
                 raise ValueError("Argument %s not recognized." % param_name)
 
+        # Keep track of parameters in dictionary rather than as object parameters
+        self.params = {}
+
         # Set all parameters that are trainable
         for key, val in param_dict.items():
             try:
                 low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
-                setattr(
-                    self,
-                    key,
-                    gpflow.Parameter(
+                self.params[key] = gpflow.Parameter(
                         val,
                         dtype=tf.float64,
                         name=key,
@@ -80,19 +81,17 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                         transform=tfp.bijectors.SoftClip(
                             low=low_bound, high=high_bound
                         ),
-                    ),
-                )
+                    )
 
             except KeyError:
-                setattr(
-                    self,
-                    key,
-                    gpflow.Parameter(val, dtype=tf.float64, name=key, trainable=True),
-                )
+                self.params[key] = gpflow.Parameter(val,
+                                                    dtype=tf.float64,
+                                                    name=key,
+                                                    trainable=True)
 
         # Set all other parameters
         for key, val in non_param_dict.items():
-            setattr(self, key, val)
+            self.params[key] = val
 
         # Defining how cutoffs handled for all lines
         self.wing_method = wing_method
@@ -111,7 +110,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         # Where the appropriate dataset-dependent parameter is used at each index
         param_list = []
         for param in param_names:
-            this_param = getattr(self, param)
+            this_param = self.params[param]
             if len(this_param.shape) > 0:
                 if this_param.shape[0] > 1:
                     # Have different parameter for every dataset
@@ -120,7 +119,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                     # Parameter that is 1D used for all datasets
                     param_list.append(tf.gather(this_param, np.zeros_like(dInds)))
             else:
-                # Scalar paramter used for all datasets
+                # Scalar parameter used for all datasets
                 param_list.append(tf.fill(dInds.shape, this_param))
         return param_list
 
@@ -130,13 +129,13 @@ class LineShape(gpflow.mean_functions.MeanFunction):
             np.sqrt(2 * 1.380648813e-16 * T * np.log(2) / mass / 2.99792458e10 ** 2)
             * nu
         )
-        gamma0 = gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.n_gamma0)
-        shift0 = (delta0 + self.n_delta0 * (T - self.Tref)) * (P / self.Pref)
+        gamma0 = gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.params['n_gamma0'])
+        shift0 = (delta0 + self.params['n_delta0'] * (T - self.Tref)) * (P / self.Pref)
         gamma2 = (
-            sd_gamma * gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.n_gamma2)
+            sd_gamma * gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.params['n_gamma2'])
         )
-        shift2 = (sd_delta * delta0 + self.n_delta2 * (T - self.Tref)) * (P / self.Pref)
-        nuVC = nuVC * (P / self.Pref) * ((self.Tref / T) ** self.n_nuvc)
+        shift2 = (sd_delta * delta0 + self.params['n_delta2'] * (T - self.Tref)) * (P / self.Pref)
+        nuVC = nuVC * (P / self.Pref) * ((self.Tref / T) ** self.params['n_nuvc'])
         eta = eta
         return (gammaD, gamma0, gamma2, shift0, shift2, nuVC, eta)
 
@@ -145,11 +144,11 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         sigmaTref = PYTIPS2017(self.molec_id, self.iso, self.Tref)
         # Taken from hapi.py and made compatible with tensorflow
         const = np.float64(1.4388028496642257)
-        ch = tf.exp(-const * self.elower / T) * (1 - tf.exp(-const * nu / T))
-        zn = tf.exp(-const * self.elower / self.Tref) * (
+        ch = tf.exp(-const * self.params['elower'] / T) * (1 - tf.exp(-const * nu / T))
+        zn = tf.exp(-const * self.params['elower'] / self.Tref) * (
             1 - tf.exp(-const * nu / self.Tref)
         )
-        LineIntensity = self.sw_scale_fac * sw * sigmaTref / sigmaT * ch / zn
+        LineIntensity = self.params['sw_scale_fac'] * sw * sigmaTref / sigmaT * ch / zn
         return LineIntensity
 
     def get_wave_cut_mask(self, wavenumbers, gammaD, gamma0, nu):
@@ -266,7 +265,7 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
     # Freeze somethings and let others vary
     for name, val in vary_dict.items():
         # try:
-        gpflow.set_trainable(getattr(lineshape, name), val)
+        gpflow.set_trainable(lineshape.params[name], val)
         # except AttributeError:
         #    pass
     return lineshape

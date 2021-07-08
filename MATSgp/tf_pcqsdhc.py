@@ -5,33 +5,32 @@ fully compatible with tensorflow.
 import numpy as np
 import tensorflow as tf
 
+# define static data
+zone = np.complex128(1.0e0 + 0.0e0j)
+zi = np.complex128(0.0e0 + 1.0e0j)
+tt = np.float64(
+    [
+        0.5e0,
+        1.5e0,
+        2.5e0,
+        3.5e0,
+        4.5e0,
+        5.5e0,
+        6.5e0,
+        7.5e0,
+        8.5e0,
+        9.5e0,
+        10.5e0,
+        11.5e0,
+        12.5e0,
+        13.5e0,
+        14.5e0,
+    ]
+)
+pipwoeronehalf = np.float64(0.564189583547756e0)
 
 # ------------------ complex probability function -----------------------
 def cpf3(X, Y):
-    # define static data
-    zone = np.complex128(1.0e0 + 0.0e0j)
-    zi = np.complex128(0.0e0 + 1.0e0j)
-    tt = np.float64(
-        [
-            0.5e0,
-            1.5e0,
-            2.5e0,
-            3.5e0,
-            4.5e0,
-            5.5e0,
-            6.5e0,
-            7.5e0,
-            8.5e0,
-            9.5e0,
-            10.5e0,
-            11.5e0,
-            12.5e0,
-            13.5e0,
-            14.5e0,
-        ]
-    )
-    pipwoeronehalf = np.float64(0.564189583547756e0)
-
     zm1 = zone / tf.complex(X, Y)  # maybe redundant
     zm2 = zm1 ** 2
     zsum = zone
@@ -74,13 +73,8 @@ def cef(x, y, N):
     a = np.flipud(a[1 : N + 1])
     # Reorder coefficients.
     Z = (L + 1.0j * z) / (L - 1.0j * z)
-    p = tf.math.polyval([tf.cast(val, tf.complex128) for val in a.tolist()], Z)
+    p = tf.math.polyval([val+0.0j for val in a.tolist()], Z)
     # Polynomial evaluation.
-    # Not sure if above line will work with Tensorflow...
-    # Need to check because may fail quietly, i.e. break gradient without throwing error
-    # If can figure out what this whole function is supposed to be doing, though, may be able to just
-    # directly return w(z)... just need to know what zA2 and iz are...
-    # Hopefully using tf.math.polyval instead of np.polyval will do the trick.
     w = 2 * p / (L - 1.0j * z) ** 2 + (1 / np.sqrt(np.pi)) / (L - 1.0j * z)
     # Evaluate w(z).
     return w

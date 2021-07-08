@@ -215,7 +215,6 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
     n_dsets = len(nu_list)
     param_dict = {}
     vary_dict = {}
-    constraint_dict = {}
     vary_dict["nu"] = bool(
         np.sum(frame.filter(regex=r"nu_*\d_vary$").values)
     )  # Logical or, if any True, vary all
@@ -241,20 +240,27 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
                 vary_dict[new_name.replace("_vary", "")] = bool(val)
             else:
                 param_dict[new_name] = val
-                try:
-                    constraint_type, constraint_info = limit_factor_dict[name]
-                    if constraint_type == "magnitude":
-                        constraint_dict[new_name] = (
-                            val - constraint_info,
-                            val + constraint_info,
-                        )
-                    elif constraint_type == "factor":
-                        constraint_dict[new_name] = (
-                            val / constraint_info,
-                            val * constraint_info,
-                        )
-                except KeyError:
-                    pass
+    #Separately loop over parameters to get constraints
+    constraint_dict = {}
+    for name, val in frame.iteritems():
+        if ('vary' in name) or ("err" in name):
+            continue
+        else:
+            new_name = name.replace("_air", "").lower()
+            try:
+                constraint_type, constraint_info = limit_factor_dict[name]
+                if constraint_type == "magnitude":
+                    constraint_dict[new_name] = (
+                        val - constraint_info,
+                        val + constraint_info,
+                    )
+                elif constraint_type == "factor":
+                    constraint_dict[new_name] = (
+                        val / constraint_info,
+                        val * constraint_info,
+                    )
+            except KeyError:
+                pass
     # Create our lineshape function
     lineshape = LineShape(
         frame["molec_id"],

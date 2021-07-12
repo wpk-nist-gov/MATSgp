@@ -5,7 +5,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from .hapi import PYTIPS2017, molecularMass
+from .hapi import PYTIPS2017 #, molecularMass
+from MATS.Utilities import molecularMass
 from .tf_pcqsdhc import tf_pcqsdhc
 
 # This recreates HTP_from_DF_select() for a single spectra
@@ -13,6 +14,17 @@ from .tf_pcqsdhc import tf_pcqsdhc
 
 # Class for a single, individual lineshape
 # To model spectra, will need lots of these joined together with ComboMeanFunc
+
+
+#Instead of loading constants from MATS.Utilities, define as dictionary
+#More clear and avoids issues with variable scope and naming
+constants = {'h' : 6.62607015e-27, #erg s https://physics.nist.gov/cgi-bin/cuu/Value?h|search_for=h as of 5/21/2020
+             'c' : 29979245800, #cm/s # https://physics.nist.gov/cgi-bin/cuu/Value?c|search_for=c as of 5/21/2020
+             'k' : 1.380649e-16, # erg / K https://physics.nist.gov/cgi-bin/cuu/Value?k as of 5/21/2020     
+             'Na' : 6.02214076e23, # mol-1 https://physics.nist.gov/cgi-bin/cuu/Value?na as of 5/21/2020
+             'cpa_atm' : (10*101325)**-1, #convert from cpa to atm  https://physics.nist.gov/cgi-bin/cuu/Value?stdatm|search_for=atmosphere as of 5/21/2020
+            }
+constants['c2'] =  (constants['h']*constants['c'])/constants['k']
 
 
 class LineShape(gpflow.mean_functions.MeanFunction):
@@ -76,7 +88,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                 try:
                     low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
                     self.params[key] = gpflow.Parameter(
-                            val,
+                            np.array(val, dtype=np.float64),
                             dtype=tf.float64,
                             name=key,
                             trainable=True,
@@ -86,16 +98,16 @@ class LineShape(gpflow.mean_functions.MeanFunction):
                         )
 
                 except KeyError:
-                    self.params[key] = gpflow.Parameter(val,
+                    self.params[key] = gpflow.Parameter(np.array(val, dtype=np.float64),
                                                         dtype=tf.float64,
                                                         name=key,
                                                         trainable=True)
             else:
-                self.params[key] = tf.constant(val, dtype=tf.float64)
+                self.params[key] = tf.constant(np.array(val, dtype=np.float64), dtype=tf.float64)
 
         # Set all other parameters
         for key, val in non_param_dict.items():
-            self.params[key] = tf.constant(val, dtype=tf.float64)
+            self.params[key] = tf.constant(np.array(val, dtype=np.float64), dtype=tf.float64)
 
         # Defining how cutoffs handled for all lines
         self.wing_method = wing_method
@@ -128,12 +140,12 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         return param_list
 
     def get_params_at_TP(self, T, P, nu, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta):
-        mass = molecularMass(self.molec_id, self.iso) * 1.66053873e-27 * 1000
+        mass = molecularMass(self.molec_id, self.iso) #* 1.66053873e-27 * 1000
         gammaD = (
-            np.sqrt(2 * 1.380648813e-16 * T * np.log(2) / mass / 2.99792458e10 ** 2)
-            * nu
+            np.sqrt(2 * constants['k'] * constants['Na'] * T * np.log(2) / mass)
+            * nu / constants['c']
         )
-        gamma0 = gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.params['n_gamma0'])
+        calc_gamma0 = gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.params['n_gamma0'])
         shift0 = (delta0 + self.params['n_delta0'] * (T - self.Tref)) * (P / self.Pref)
         gamma2 = (
             sd_gamma * gamma0 * (P / self.Pref) * ((self.Tref / T) ** self.params['n_gamma2'])
@@ -141,16 +153,15 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         shift2 = (sd_delta * delta0 + self.params['n_delta2'] * (T - self.Tref)) * (P / self.Pref)
         nuVC = nuVC * (P / self.Pref) * ((self.Tref / T) ** self.params['n_nuvc'])
         eta = eta
-        return (gammaD, gamma0, gamma2, shift0, shift2, nuVC, eta)
+        return (gammaD, calc_gamma0, gamma2, shift0, shift2, nuVC, eta)
 
     def environmentdependency_intensity(self, T, nu, sw):
         sigmaT = np.array([PYTIPS2017(self.molec_id, self.iso, tval) for tval in T])
         sigmaTref = PYTIPS2017(self.molec_id, self.iso, self.Tref)
         # Taken from hapi.py and made compatible with tensorflow
-        const = np.float64(1.4388028496642257)
-        ch = tf.exp(-const * self.params['elower'] / T) * (1 - tf.exp(-const * nu / T))
-        zn = tf.exp(-const * self.params['elower'] / self.Tref) * (
-            1 - tf.exp(-const * nu / self.Tref)
+        ch = tf.exp(-constants['c2'] * self.params['elower'] / T) * (1 - tf.exp(-constants['c2'] * nu / T))
+        zn = tf.exp(-constants['c2'] * self.params['elower'] / self.Tref) * (
+            1 - tf.exp(-constants['c2'] * nu / self.Tref)
         )
         LineIntensity = self.params['sw_scale_fac'] * sw * sigmaTref / sigmaT * ch / zn
         return LineIntensity
@@ -178,7 +189,7 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         P = xTP[:, 2]
         dInds = np.array(xTP[:, 3], dtype=np.int32)
 
-        mol_dens = (P / 9.869233e-7) / (1.380648813e-16 * T)
+        mol_dens = (P / constants['cpa_atm']) / (constants['k'] * T)
 
         nu, sw, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta, y = self.get_dset_params(
             dInds,

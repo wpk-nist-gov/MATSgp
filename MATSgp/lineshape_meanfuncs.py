@@ -59,16 +59,16 @@ class LineShape(gpflow.mean_functions.MeanFunction):
             "nuvc": 0.0,
             "eta": 0.0,
             "y": 0.0,
-        }
-        # Non-trainable (cannot vary)
-        non_param_dict = {
-            "elower": 1.0,
-            "sw_scale_fac": 1e-26,
             "n_gamma0": 0.63,
             "n_delta0": 5e-05,
             "n_gamma2": 0.63,
             "n_delta2": 0.0,
             "n_nuvc": 1.0,
+        }
+        # Non-trainable (cannot vary)
+        non_param_dict = {
+            "elower": 1.0,
+            "sw_scale_fac": 1e-26,
         }
         # Update with passed keyword arguments
         for param_name in kwargs.keys():

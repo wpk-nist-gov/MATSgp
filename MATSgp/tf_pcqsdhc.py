@@ -151,7 +151,7 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
     #
     # -------------------------------------------------
 
-    sg = tf.constant(sg)
+    sg = tf.cast(sg, dtype=tf.float64)
 
     # With Tensorflow, can't assign values within tensors, so must stitch together at end
     # number_of_points = sg.shape[0]

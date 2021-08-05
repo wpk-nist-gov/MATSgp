@@ -399,8 +399,13 @@ class LineShape(gpflow.mean_functions.MeanFunction):
 
 
 def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
-    nu_list = frame.filter(regex=r"nu_*\d*\d$").values.flatten().tolist()
-    sw_list = frame.filter(regex=r"sw_*\d*\d$").values.flatten().tolist()
+    nu_list = frame.filter(regex=r"nu_\d*$").values.flatten().tolist()
+    sw_list = frame.filter(regex=r"sw_\d*$").values.flatten().tolist()
+    #Make sure nu_list and sw_list are not empty, otherwise will overide default with empty
+    if len(nu_list) == 0:
+        nu_list = frame.filter(regex=r"nu$").values.flatten().tolist()
+    if len(sw_list) == 0:
+        sw_list = frame.filter(regex=r"sw$").values.flatten().tolist()
 
     # Infer number of data sets from highest number associated with nu or sw
     n_dsets = np.max([len(nu_list), len(sw_list)])
@@ -408,10 +413,12 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
     param_dict = {}
     vary_dict = {}
     vary_dict["nu"] = bool(
-        np.sum(frame.filter(regex=r"nu_*\d*_vary$").values)
+        np.sum(frame.filter(regex=r"nu_\d*_vary$").values)
+        + np.sum(frame.filter(regex=r"nu_vary$").values)
     )  # Logical or, if any True, vary all
     vary_dict["sw"] = bool(
-        np.sum(frame.filter(regex=r"sw_*\d*_vary$").values, dtype=bool)
+        np.sum(frame.filter(regex=r"sw_\d*_vary$").values, dtype=bool)
+        + np.sum(frame.filter(regex=r"sw_vary$").values)
     )
 
     # Loop over parameters in dataframe excluding nu and sw
@@ -453,12 +460,6 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
                     )
             except KeyError:
                 pass
-
-    #Make sure nu_list and sw_list are not empty, otherwise will overide default with empty
-    if len(nu_list) == 0.0:
-        nu_list = [1.0]
-    if len(sw_list) == 0.0:
-        sw_list = [1.0]
 
     # Create our lineshape function
     lineshape = LineShape(

@@ -5,35 +5,34 @@ fully compatible with tensorflow.
 import numpy as np
 import tensorflow as tf
 
+# define static data
+zone = np.complex128(1.0e0 + 0.0e0j)
+zi = np.complex128(0.0e0 + 1.0e0j)
+tt = np.float64(
+    [
+        0.5e0,
+        1.5e0,
+        2.5e0,
+        3.5e0,
+        4.5e0,
+        5.5e0,
+        6.5e0,
+        7.5e0,
+        8.5e0,
+        9.5e0,
+        10.5e0,
+        11.5e0,
+        12.5e0,
+        13.5e0,
+        14.5e0,
+    ]
+)
+pipwoeronehalf = np.float64(0.564189583547756e0)
 
 # ------------------ complex probability function -----------------------
 def cpf3(X, Y):
-    # define static data
-    zone = np.complex128(1.0e0 + 0.0e0j)
-    zi = np.complex128(0.0e0 + 1.0e0j)
-    tt = np.float64(
-        [
-            0.5e0,
-            1.5e0,
-            2.5e0,
-            3.5e0,
-            4.5e0,
-            5.5e0,
-            6.5e0,
-            7.5e0,
-            8.5e0,
-            9.5e0,
-            10.5e0,
-            11.5e0,
-            12.5e0,
-            13.5e0,
-            14.5e0,
-        ]
-    )
-    pipwoeronehalf = np.float64(0.564189583547756e0)
-
     zm1 = zone / tf.complex(X, Y)  # maybe redundant
-    zm2 = zm1 ** 2
+    zm2 = tf.square(zm1)
     zsum = zone
     zterm = zone
 
@@ -74,14 +73,9 @@ def cef(x, y, N):
     a = np.flipud(a[1 : N + 1])
     # Reorder coefficients.
     Z = (L + 1.0j * z) / (L - 1.0j * z)
-    p = tf.math.polyval([tf.cast(val, tf.complex128) for val in a.tolist()], Z)
+    p = tf.math.polyval([val+0.0j for val in a.tolist()], Z)
     # Polynomial evaluation.
-    # Not sure if above line will work with Tensorflow...
-    # Need to check because may fail quietly, i.e. break gradient without throwing error
-    # If can figure out what this whole function is supposed to be doing, though, may be able to just
-    # directly return w(z)... just need to know what zA2 and iz are...
-    # Hopefully using tf.math.polyval instead of np.polyval will do the trick.
-    w = 2 * p / (L - 1.0j * z) ** 2 + (1 / np.sqrt(np.pi)) / (L - 1.0j * z)
+    w = 2 * p / tf.square(L - 1.0j * z) + (1 / np.sqrt(np.pi)) / (L - 1.0j * z)
     # Evaluate w(z).
     return w
 
@@ -108,9 +102,9 @@ def hum1_wei(x, y, n=24):
     # So first N values of output should be weideman() of all x and y then with mask applied
     # For efficiency, still check for any being True
     if tf.reduce_any(mask):
-        cerf = tf.where(mask, cef(x, y, n), 1 / np.sqrt(np.pi) * t / (0.5 + t ** 2))
+        cerf = tf.where(mask, cef(x, y, n), 1 / np.sqrt(np.pi) * t / (0.5 + tf.square(t)))
     else:
-        cerf = 1 / np.sqrt(np.pi) * t / (0.5 + t ** 2)
+        cerf = 1 / np.sqrt(np.pi) * t / (0.5 + tf.square(t))
     return cerf
 
 
@@ -157,9 +151,7 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
     #
     # -------------------------------------------------
 
-    # sg is the only vector argument which is passed to function
-    # Just make sure it's a vector
-    sg = tf.constant(sg)
+    sg = tf.cast(sg, dtype=tf.float64)
 
     # With Tensorflow, can't assign values within tensors, so must stitch together at end
     # number_of_points = sg.shape[0]
@@ -213,14 +205,14 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
         # index_NOT_Z1 = ~index_Z1
         # if tf.reduce_any(index_Z1):
         if tf.reduce_all(index_Z1):
-            Bterm = rpi * cte[index_PART1] * ((1.0e0 - Z1 ** 2) * (W1) + Z1 / rpi)
+            Bterm = rpi * cte[index_PART1] * ((1.0e0 - tf.square(Z1)) * (W1) + Z1 / rpi)
         # Original in hapi.py was another if statement... if any(index_NOT_Z1)
         # Unless index_Z1 is all true, that overwrites everything
         # Not sure if that is the intended behavior, but if it is, accomplish by changing above to if all(index_Z1)
         # and changing below to just else
         # if tf.reduce_any(index_NOT_Z1):
         else:
-            Bterm = cte[index_PART1] * (rpi * (W1) + 0.5e0 / Z1 - 0.75e0 / (Z1 ** 3))
+            Bterm = cte[index_PART1] * (rpi * (W1) + 0.5e0 / Z1 - 0.75e0 / (Z1*Z1*Z1))
         merge_inds_PART1 = tf.range(sg.shape[0])[index_PART1]
         Aterm_PART1 = Aterm
         Bterm_PART1 = Bterm
@@ -228,13 +220,12 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
     # PART2, PART3 AND PART4   (PART4 IS A MAIN PART)
     # X - vector, Y - scalar
     X = (tf.complex(tf.zeros_like(sg), sg0 - sg) + c0t) / c2t
-    Y = 1.0e0 / ((2.0e0 * cte * c2t)) ** 2
-    csqrtY = tf.complex(Gam2, -Shift2) / (
-        2.0e0
-        * cte
-        * (1.0e0 - tf.cast(eta, tf.complex128))
-        * tf.cast(Gam2 ** 2 + Shift2 ** 2, tf.complex128)
-    )
+    Y = 1.0e0 / tf.square((2.0e0 * cte * c2t))
+    fac_csqrtY =  1.0e0 / (2.0e0
+                    * tf.cast(cte, tf.float64) #Works because should only have real part
+                    * (1.0e0 - eta)
+                    * (tf.square(Gam2) + tf.square(Shift2)))
+    csqrtY = tf.complex(Gam2 * fac_csqrtY, -Shift2 * fac_csqrtY)
 
     index_PART2 = (abs(X) <= 3.0e-8 * abs(Y)) & ~index_PART1
     index_PART3 = (abs(Y) <= 1.0e-15 * abs(X)) & ~index_PART2 & ~index_PART1
@@ -250,8 +241,8 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
         yZ1 = tf.math.real(Z1)
         xZ2 = -tf.math.imag(Z2)
         yZ2 = tf.math.real(Z2)
-        SZ1 = tf.sqrt(xZ1 ** 2 + yZ1 ** 2)
-        SZ2 = tf.sqrt(xZ2 ** 2 + yZ2 ** 2)
+        SZ1 = tf.sqrt(tf.square(xZ1) + tf.square(yZ1))
+        SZ2 = tf.sqrt(tf.square(xZ2) + tf.square(yZ2))
         DSZ = tf.abs(SZ1 - SZ2)
         SZmx = tf.maximum(SZ1, SZ2)
         SZmn = tf.minimum(SZ1, SZ2)
@@ -261,8 +252,8 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
         Aterm = rpi * cte[index_PART4] * ((W1_PART4) - (W2_PART4))
         Bterm = (
             -1.0e0
-            + rpi / (2.0e0 * csqrtY[index_PART4]) * (1.0e0 - Z1 ** 2) * (W1_PART4)
-            - rpi / (2.0e0 * csqrtY[index_PART4]) * (1.0e0 - Z2 ** 2) * (W2_PART4)
+            + rpi / (2.0e0 * csqrtY[index_PART4]) * (1.0e0 - tf.square(Z1)) * (W1_PART4)
+            - rpi / (2.0e0 * csqrtY[index_PART4]) * (1.0e0 - tf.square(Z2)) * (W2_PART4)
         ) / c2t[index_PART4]
         merge_inds_PART4 = tf.range(sg.shape[0])[index_PART4]
         Aterm_PART4 = Aterm
@@ -283,8 +274,8 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
         Aterm = rpi * cte[index_PART2] * ((W1_PART2) - (W2_PART2))
         Bterm = (
             -1.0e0
-            + rpi / (2.0e0 * csqrtY[index_PART2]) * (1.0e0 - Z1 ** 2) * (W1_PART2)
-            - rpi / (2.0e0 * csqrtY[index_PART2]) * (1.0e0 - Z2 ** 2) * (W2_PART2)
+            + rpi / (2.0e0 * csqrtY[index_PART2]) * (1.0e0 - tf.square(Z1)) * (W1_PART2)
+            - rpi / (2.0e0 * csqrtY[index_PART2]) * (1.0e0 - tf.square(Z2)) * (W2_PART2)
         ) / c2t[index_PART2]
         merge_inds_PART2 = tf.range(sg.shape[0])[index_PART2]
         Aterm_PART2 = Aterm
@@ -305,7 +296,7 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
         Aterm = tf.where(
             index_ABS,
             (2.0e0 * rpi / c2t[index_PART3]) * (1.0e0 / rpi - tf.sqrt(X_TMP) * (Wb)),
-            (1.0e0 / c2t[index_PART3]) * (1.0e0 / X_TMP - 1.5e0 / (X_TMP ** 2)),
+            (1.0e0 / c2t[index_PART3]) * (1.0e0 / X_TMP - 1.5e0 / tf.square(X_TMP)),
         )
         Bterm = tf.where(
             index_ABS,
@@ -322,7 +313,7 @@ def tf_pcqsdhc(sg0, GamD, Gam0, Gam2, Shift0, Shift2, anuVC, eta, sg):
             * (
                 -1.0e0
                 + (1.0e0 - X_TMP - 2.0e0 * Y[index_PART3])
-                * (1.0e0 / X_TMP - 1.5e0 / (X_TMP ** 2))
+                * (1.0e0 / X_TMP - 1.5e0 / tf.square(X_TMP))
                 # + 2.0e0*rpi*sqrt(X_TMP + Y)*(W1)) #original, but would fail b/c W1 out of scope
                 + 2.0e0 * rpi * tf.sqrt(X_TMP + Y[index_PART3]) * (W1_PART3)
             ),

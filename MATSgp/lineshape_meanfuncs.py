@@ -177,10 +177,37 @@ def linemix_from_dataframe(frame, limit_factor_dict={}, linemix_kwargs={}):
     return linemix
 
 
+class Base_Mean_Func(gpflow.mean_functions.MeanFunction):
+    def __init__(self):
+        super().__init__()
+
+    def get_dset_params(self, dInds, param_names):
+        # Use indices of dataset for each data point to determine parameters for all data points
+        # Returns tensors of same size as dInds for each adjustable parameter in param_names (list of strings)
+        # Where the appropriate dataset-dependent parameter is used at each index
+        param_list = []
+        for param in param_names:
+            this_param = self.params[param]
+            if len(this_param.shape) > 0:
+                if this_param.shape[0] > 1:
+                    # Have different parameter for every dataset
+                    param_list.append(tf.gather(this_param, dInds))
+                else:
+                    # Parameter that is 1D used for all datasets
+                    param_list.append(tf.gather(this_param, np.zeros_like(dInds)))
+            else:
+                # Scalar parameter used for all datasets
+                param_list.append(tf.fill(dInds.shape, this_param))
+        return param_list
+
+    def __call__(self):
+        raise NotImplementedError("Need to define __call__ method if work off this base class.")
+
+
 # This recreates HTP_from_DF_select() for a single spectra
 # Class for a single, individual lineshape
 # To model spectra, will need lots of these joined together with ComboMeanFunc
-class LineShape(gpflow.mean_functions.MeanFunction):
+class LineShape(Base_Mean_Func):
     def __init__(
         self,
         molec_id,
@@ -194,6 +221,8 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         fittable=True,
         **kwargs
     ):
+
+        super().__init__()
 
         # Molecule/line of interest
         self.molec_id = molec_id
@@ -281,25 +310,6 @@ class LineShape(gpflow.mean_functions.MeanFunction):
         # Other stuff - seems to be constant and not change
         self.Tref = 296.0
         self.Pref = 1.0
-
-    def get_dset_params(self, dInds, param_names):
-        # Use indices of dataset for each data point to determine parameters for all data points
-        # Returns tensors of same size as dInds for each adjustable parameter in param_names (list of strings)
-        # Where the appropriate dataset-dependent parameter is used at each index
-        param_list = []
-        for param in param_names:
-            this_param = self.params[param]
-            if len(this_param.shape) > 0:
-                if this_param.shape[0] > 1:
-                    # Have different parameter for every dataset
-                    param_list.append(tf.gather(this_param, dInds))
-                else:
-                    # Parameter that is 1D used for all datasets
-                    param_list.append(tf.gather(this_param, np.zeros_like(dInds)))
-            else:
-                # Scalar parameter used for all datasets
-                param_list.append(tf.fill(dInds.shape, this_param))
-        return param_list
 
     def get_params_at_TP(self, T, P, nu, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta):
         mass = molecularMass(self.molec_id, self.iso) #* 1.66053873e-27 * 1000
@@ -478,10 +488,11 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
     return lineshape
 
 
-class Etalon(gpflow.mean_functions.MeanFunction):
+class Etalon(Base_Mean_Func):
     def __init__(
         self, amplitude, period, phase, ref_wavenumber, noise_scale_factor=1.0, fittable=True
     ):
+        super().__init__()
         # Note that if multidimensional, assumes different values for different datasets
         self.params = {}
         for name, val  in [['amp', amplitude],
@@ -493,25 +504,6 @@ class Etalon(gpflow.mean_functions.MeanFunction):
             else:
                 self.params[name] = val
         self.noise_scaling = noise_scale_factor
-
-    def get_dset_params(self, dInds, param_names):
-        # Use indices of dataset for each data point to determine parameters for all data points
-        # Returns tensors of same size as dInds for each adjustable parameter in param_names (list of strings)
-        # Where the appropriate dataset-dependent parameter is used at each index
-        param_list = []
-        for param in param_names:
-            this_param = self.params[param]
-            if len(this_param.shape) > 0:
-                if this_param.shape[0] > 1:
-                    # Have different parameter for every dataset
-                    param_list.append(tf.gather(this_param, dInds))
-                else:
-                    # Parameter that is 1D used for all datasets
-                    param_list.append(tf.gather(this_param, np.zeros_like(dInds)))
-            else:
-                # Scalar parameter used for all datasets
-                param_list.append(tf.fill(dInds.shape, this_param))
-        return param_list
 
     def __call__(self, xTP):
         xTP = np.array(xTP, dtype=np.float64)
@@ -528,6 +520,35 @@ class Etalon(gpflow.mean_functions.MeanFunction):
 
 #Should add function to create etalons from baseline parameter list
 #Though with various kernels, should be able to take care of etalons without specifying...
+#(and should also create baseline objects, too...)
+
+
+class Baseline(Base_Mean_Func):
+    def __init__(
+        self, c0, c1, c2, ref_wavenumber, noise_scale_factor=1.0, fittable=True
+    ):
+        super().__init__()
+        # Note that if multidimensional, assumes different values for different datasets
+        self.params = {}
+        for name, val  in [['c0', c0],
+                           ['c1', c1],
+                           ['c2', c2],
+                           ['ref_wave', ref_wavenumber]]:
+            if fittable:
+                self.params[name] = gpflow.Parameter(val, dtype=tf.float64, name=name, trainable=False)
+            else:
+                self.params[name] = val
+        self.noise_scaling = noise_scale_factor
+
+    def __call__(self, xTP):
+        xTP = np.array(xTP, dtype=np.float64)
+        wavenumbers = xTP[:, 0]
+        dInds = np.array(xTP[:, 3], dtype=np.int32)
+        c0, c1, c2, ref_waves = self.get_dset_params(dInds, list(self.params.keys()))
+        baseline_model = tf.math.polyval([c2, c1, c0], wavenumbers-ref_waves)
+        baseline_model = baseline_model / self.noise_scaling
+        baseline_model = tf.reshape(baseline_model, (-1, 1))
+        return baseline_model
 
 
 class ComboMeanFunc(gpflow.mean_functions.MeanFunction):

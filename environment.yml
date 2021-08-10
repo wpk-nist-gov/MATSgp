@@ -5,19 +5,21 @@ channels:
 dependencies:
   - python=3.8
   - setuptools
-  - numpy
-  - pandas
-  # optional?
-  - matplotlib
-  # mats stuff
-  - lmfit
-  - mpmath
-  - seaborn
-  - scipy
-  - qgrid
+  - MATS-dependencies
+  # - setuptools
+  # - numpy
+  # - pandas
+  # # optional?
+  # - matplotlib
+  # # mats stuff
+  # - lmfit
+  # - mpmath
+  # - seaborn
+  # - scipy
+  # - qgrid
   - pip
   - pip:
-      - git+https://github.com/wpk-nist-gov/MATS.git@cci-from-Development
+      - https://raw.githubusercontent.com/wpk-nist-gov/MATS/feature/master-reformat/wheel/MATS-3-py3-none-any.whl
       - tensorflow
       - tensorflow-probability
       - gpflow

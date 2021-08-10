@@ -4,17 +4,17 @@ channels:
   - wpk-nist
 dependencies:
   ## top level dependencies
-  - python=3.8
-  - setuptools
-  - numpy
-  - pandas
-  - matplotlib
-  # mats stuff
-  - lmfit
-  - mpmath
-  - seaborn
-  - scipy
-  - qgrid
+  # - python=3.8
+  # - setuptools
+  # - numpy
+  # - pandas
+  # - matplotlib
+  # # mats stuff
+  # - lmfit
+  # - mpmath
+  # - seaborn
+  # - scipy
+  # - qgrid
   ## developmental stuff
   # linting
   - black

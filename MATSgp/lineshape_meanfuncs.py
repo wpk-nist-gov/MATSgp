@@ -537,6 +537,7 @@ class Etalon(Base_Mean_Func):
         phase,
         ref_wavenumber,
         noise_scale_factor=1.0,
+        dset_list=[SpectralDataInfo()],
         fittable=True,
     ):
         super().__init__()
@@ -555,10 +556,16 @@ class Etalon(Base_Mean_Func):
             else:
                 self.params[name] = val
         self.noise_scaling = noise_scale_factor
+        self.dset_list = dset_list
 
     def __call__(self, xTP):
         xTP = np.array(xTP, dtype=np.float64)
         wavenumbers = xTP[:, 0]
+        dInds = np.array(xTP[:, 3], dtype=np.int32)
+        x_shift = tf.gather(
+            [tf.convert_to_tensor(dset.x_shift()) for dset in self.dset_list], dInds
+        )
+        wavenumbers = wavenumbers + x_shift
         dInds = np.array(xTP[:, 3], dtype=np.int32)
         amps, periods, phases, ref_waves = self.get_dset_params(
             dInds, list(self.params.keys())
@@ -578,7 +585,7 @@ class Etalon(Base_Mean_Func):
 
 class Baseline(Base_Mean_Func):
     def __init__(
-        self, c0, c1, c2, ref_wavenumber, noise_scale_factor=1.0, fittable=True
+        self, c0, c1, c2, ref_wavenumber, noise_scale_factor=1.0, fittable=True, dset_list=[SpectralDataInfo()],
     ):
         super().__init__()
         # Note that if multidimensional, assumes different values for different datasets
@@ -596,10 +603,16 @@ class Baseline(Base_Mean_Func):
             else:
                 self.params[name] = val
         self.noise_scaling = noise_scale_factor
+        self.dset_list = dset_list
 
     def __call__(self, xTP):
         xTP = np.array(xTP, dtype=np.float64)
         wavenumbers = xTP[:, 0]
+        dInds = np.array(xTP[:, 3], dtype=np.int32)
+        x_shift = tf.gather(
+            [tf.convert_to_tensor(dset.x_shift()) for dset in self.dset_list], dInds
+        )
+        wavenumbers = wavenumbers + x_shift
         dInds = np.array(xTP[:, 3], dtype=np.int32)
         c0, c1, c2, ref_waves = self.get_dset_params(dInds, list(self.params.keys()))
         baseline_model = tf.math.polyval([c2, c1, c0], wavenumbers - ref_waves)

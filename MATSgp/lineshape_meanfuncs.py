@@ -19,10 +19,35 @@ from .tf_pcqsdhc import tf_pcqsdhc
 #              'cpa_atm' : (10*101325)**-1, #convert from cpa to atm  https://physics.nist.gov/cgi-bin/cuu/Value?stdatm|search_for=atmosphere as of 5/21/2020
 #             }
 # constants['c2'] =  (constants['h']*constants['c'])/constants['k']
+# Covered now by dictionary CONSTANTS imported from MATS.codata
 
 
 class SpectralDataInfo(gpflow.base.Module):
+    """Class to hold information about spectral data, which will be needed by line shape
+models to determine parameters. For instance, if there were multiple molecular species
+contributing to the spectra, you would at least need one SpectralDataInfo object for each
+of them to separately specify mole fractions. This can also help specify groups of spectra
+that all share a common nominal temperature. Typically, you will need at least one object
+for each dataset, maybe more depending on number of molecular species.
+    """
     def __init__(self, constraint_dict={}, fittable=True, **kwargs):
+        """
+Creates SpectralDataInfo class. The following keyword arguments can be passed to specify
+parameters specific to this class: 
+        mole_frac - mole fraction of a molecular species of interest
+        x_shift - shift in wavenumber for collected data
+        nominal_temp - nominal temperature for the data (may not match actual temperature, but
+                       is used to determine the line mixing parameter to use for a line shape
+        abun_ratio - isotopic aubndance ratio for species of interest
+
+    Inputs:
+        constraint_dict - ({}) dictionary of constraints on any parameters passed as
+                          keyword arguments (name of parameter in dictionary must match
+                          the keyword argument exactly, or will be ignored)
+        fittable - (True) Whether to make parameters fittable gpflow parameter objects
+    Outputs:
+        SpectralDataInfo class object
+        """
 
         # Trainable parameters
         param_dict = {
@@ -52,6 +77,9 @@ class SpectralDataInfo(gpflow.base.Module):
         for key, val in param_dict.items():
             if fittable:
                 try:
+                    # Attempt to apply constraints (name in constraint_dict must match!)
+                    # Note using soft-clip to apply constraints so optimizer fully general
+                    # And so, technically, applying restraints, not constraints
                     low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
                     self.params[key] = gpflow.Parameter(
                         np.array(val, dtype=np.float64),
@@ -64,6 +92,7 @@ class SpectralDataInfo(gpflow.base.Module):
                     )
 
                 except KeyError:
+                    # If fails (names don't match) just ignore constraints
                     self.params[key] = gpflow.Parameter(
                         np.array(val, dtype=np.float64),
                         dtype=tf.float64,
@@ -95,6 +124,11 @@ class SpectralDataInfo(gpflow.base.Module):
 
 
 class LineMixing(gpflow.base.Module):
+    """Class to determine the behavior of the line mixing parameter. This parameter can
+change with both nominal temperature and line shape. So for a given line shape, need a
+function, implemented here as a class with a callable, to map nominal temperatures to
+line mixing parameter values.
+    """
     def __init__(
         self,
         nom_temps,
@@ -102,6 +136,16 @@ class LineMixing(gpflow.base.Module):
         constraint_dict={},
         fittable=True,
     ):
+        """
+Creates a LineMixing class object
+
+    Inputs:
+        nom_temps - nominal temperatures (array-like)
+        y_vals - values of line mixing parameter, y, for each nominal temperature
+        constraint_dict - ({}) dictionary of constraints on specific y values (keys in the
+                          dictionary should be "y_296" for a nominal temp of 296 K)
+        fittable - (True) whether or not y should be a fittable gpflow parameter
+        """
         if len(nom_temps) != len(y_vals):
             raise ValueError(
                 "Must have same number of nominal temperatures and y values."
@@ -110,6 +154,9 @@ class LineMixing(gpflow.base.Module):
         for t, y in zip(nom_temps, y_vals):
             if fittable:
                 try:
+                    # Attempt to apply constraints (name in constraint_dict must match!)
+                    # Note using soft-clip to apply constraints so optimizer fully general
+                    # And so, technically, applying restraints, not constraints
                     low_bound, high_bound = tf.cast(
                         constraint_dict["y_" + str(t)], tf.float64
                     )
@@ -130,6 +177,9 @@ class LineMixing(gpflow.base.Module):
                 self.y[t] = tf.constant(y, dtype=tf.float64)
 
     def __call__(self, nom_temp):
+        """Given a nominal temperature, outputs the associated line mixing parameter.
+Can handle scalar or vector inputs.
+        """
         if np.ndim(nom_temp) > 0:
             out = [self.y[t] for t in nom_temp]
         else:
@@ -139,6 +189,9 @@ class LineMixing(gpflow.base.Module):
 
 
 def linemix_from_dataframe(frame, limit_factor_dict={}, linemix_kwargs={}):
+    """Utility function to parse the data in a pandas dataframe object generated by MATS
+(by default called something like Parameter_LineList.csv) and create a LineMixing object.
+    """
     nom_temps = []
     y_vals = []
     vary_dict = {}
@@ -187,10 +240,26 @@ def linemix_from_dataframe(frame, limit_factor_dict={}, linemix_kwargs={}):
 
 
 class Base_Mean_Func(gpflow.mean_functions.MeanFunction):
+    """Base class for defining mean functions, like LineShape, Etalon, or Baseline. All of
+these will have unique init and call methods, which must be defined, but they will share the
+get_dset_params method.
+    """
     def __init__(self):
         super().__init__()
 
     def get_dset_params(self, dInds, param_names):
+        """Function to map dataset indices to parameters for that dataset. Some parameters
+can change with each input dataset, while others do not. If the parameter changes with the
+dataset, we look up the appropriate parameter value by index because its first dimension
+should match the number of datasets. If it is scalar, the same value is returned for all
+dataset indices provided.
+        Inputs:
+            dInds - array-like of dataset indices (should be integers)
+            param_names - list of params in the class object to obtain dataset-specific
+                          parameters for
+        Outputs:
+            param_list - list (of length param_names) of tensors of parameters (of len dInds)
+        """
         # Use indices of dataset for each data point to determine parameters for all data points
         # Returns tensors of same size as dInds for each adjustable parameter in param_names (list of strings)
         # Where the appropriate dataset-dependent parameter is used at each index
@@ -219,6 +288,8 @@ class Base_Mean_Func(gpflow.mean_functions.MeanFunction):
 # Class for a single, individual lineshape
 # To model spectra, will need lots of these joined together with ComboMeanFunc
 class LineShape(Base_Mean_Func):
+    """Class defining a single line shape.
+    """
     def __init__(
         self,
         molec_id,
@@ -232,6 +303,23 @@ class LineShape(Base_Mean_Func):
         fittable=True,
         **kwargs
     ):
+    """
+Creates LineShape class object.
+    Inputs:
+        molec_id - molecule id in the HITRAN database
+        iso - isotope number
+        dset_list - list of SpectralDataInfo objects specifying information for each dataset
+        linemix - the line mixing object, which specifies how line mixing changes with
+                  nominal temperature for this specific line shape
+        constraint_dict - ({}) dictionary of constraints on all parameters supplied as
+                          keyword arguments (keys MUST match keyword names or will be ignored)
+        wing_method - ("wing_cutoff") how to handle cutoffs in wings of line shape
+        cutoff - (50) cutoff (may be frequency or number half-widths depending on wing_method)
+                 for truncating calculation of line shape away from its center
+        noise_scale_factor - (1.0) a scaling factor related to the noise; useful in GPR fits
+                             where want noise to be on the scale of 1.0
+        fittable - (True) whether or not to make parameters fittable gpflow parameter objects
+    """
 
         super().__init__()
 
@@ -289,6 +377,9 @@ class LineShape(Base_Mean_Func):
         for key, val in param_dict.items():
             if fittable:
                 try:
+                    # Attempt to apply constraints (name in constraint_dict must match!)
+                    # Note using soft-clip to apply constraints so optimizer fully general
+                    # And so, technically, applying restraints, not constraints
                     low_bound, high_bound = tf.cast(constraint_dict[key], tf.float64)
                     self.params[key] = gpflow.Parameter(
                         np.array(val, dtype=np.float64),
@@ -330,6 +421,10 @@ class LineShape(Base_Mean_Func):
         self.Pref = 1.0
 
     def get_params_at_TP(self, T, P, nu, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta):
+    """Function to define temperature and pressure dependence of parameters.
+Follows manipulations in MATS HTP_from_DF_select function in preparation to supply
+parameters to the Hartman-Tran profile (calculated from pcqsdhc function)
+    """
         mass = molecularMass(self.molec_id, self.iso)  # * 1.66053873e-27 * 1000
         gammaD = (
             np.sqrt(2 * CONSTANTS["k"] * CONSTANTS["Na"] * T * np.log(2) / mass)
@@ -354,6 +449,9 @@ class LineShape(Base_Mean_Func):
         return (gammaD, calc_gamma0, gamma2, shift0, shift2, nuVC, eta)
 
     def environmentdependency_intensity(self, T, nu, sw):
+        """Function for calculating additional parameter dependencies on temperature.
+Implemented based on MATS HTP_from_DF_select function.
+        """
         sigmaT = np.array([PYTIPS2017(self.molec_id, self.iso, tval) for tval in T])
         sigmaTref = PYTIPS2017(self.molec_id, self.iso, self.Tref)
         # Taken from hapi.py and made compatible with tensorflow
@@ -367,6 +465,10 @@ class LineShape(Base_Mean_Func):
         return LineIntensity
 
     def get_wave_cut_mask(self, wavenumbers, gammaD, gamma0, nu):
+        """Depending on wing_method, computes a mask to apply to spectrum to set absorption
+predictions outside the cutoff to zero. So the output will just be a tensor of ones and zeros
+that will be multiplied by the output of the pcqsdhc funtion.
+        """
         if self.wing_method == "wing_cutoff":
             # Uses cutoff number of half-widths
             cut = (
@@ -382,6 +484,15 @@ class LineShape(Base_Mean_Func):
         return mask
 
     def __call__(self, xTP):
+        """Predicts a line shape given wavenumbers, temperatures, pressures, and dataset
+indices.
+    Inputs:
+        xTP - array with columns of wavenumber, temperature, pressure, and dataset index; rows
+              represent a single data point at which absorbance will be calculated
+    Outputs:
+        out - absorbance predicted by the line shape model at each input condition; will be of
+              shape (N, 1), where N is first dimension of xTP
+        """
         # First column is x, next is T, then P, and last is dataset indices
         xTP = np.array(xTP, dtype=np.float64)
         x = xTP[:, 0]
@@ -397,8 +508,10 @@ class LineShape(Base_Mean_Func):
         )
         x = x + x_shift
 
+        #Molar density of the gas (assumes ideal gas)
         mol_dens = (P / CONSTANTS["cpa_atm"]) / (CONSTANTS["k"] * T)
 
+        #These parameters may all vary across the dataset, so get values based on dInds
         nu, sw, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta = self.get_dset_params(
             dInds,
             [
@@ -412,6 +525,8 @@ class LineShape(Base_Mean_Func):
                 "eta",
             ],
         )
+
+        #Can calculate some temperature dependencies of some parameters now
         line_intensity = self.environmentdependency_intensity(T, nu, sw)
 
         # Line mixing terms are defined not by dataset or lineshape, but by nominal temperature
@@ -421,11 +536,15 @@ class LineShape(Base_Mean_Func):
         nom_temps = np.take([dset.nominal_temp() for dset in self.dset_list], dInds)
         y = self.linemix(nom_temps) * (P / self.Pref)
 
+        #Takes parameters of model and passes through special temperature and pressure
+        #dependence to determine what gets passed into pcqsdhc function (Hartman-Tran profile)
         params = self.get_params_at_TP(
             T, P, nu, gamma0, delta0, sd_gamma, sd_delta, nuVC, eta
         )
         vals_real, vals_imag = tf_pcqsdhc(nu, *params, x)
 
+        #Based on dInds, need to get mole fractions and abundance ratios, which can change
+        #with dataset
         mole_frac = tf.gather(
             [tf.convert_to_tensor(dset.mole_frac()) for dset in self.dset_list], dInds
         )
@@ -440,15 +559,25 @@ class LineShape(Base_Mean_Func):
             * (vals_real + y * vals_imag)
         )
 
+        #Apply a mask to implement wave cutoffs
+        #NOT very computationally efficient, but easiest way to get tensorflow working
+        #To make faster, can use dynamic_stitch and dynamic_partition to break up and merge
+        #parameters determined from input and only perform line shape calculations within
+        #cutoff
         mask = self.get_wave_cut_mask(x, params[0], params[1], nu)
         out = mask * out * 1e06  # Make ppm/cm instead of just 1/cm
 
+        #Scaling by noise_scaling just convenient for stabiliting fitting with GPR
         out = out / self.noise_scaling
         out = tf.reshape(out, (-1, 1))
         return out
 
 
 def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
+    """Utility function for converting a single line in a pandas dataframe object generated
+by MATS into a LineShape class object. Typically will come from a file like
+Parameter_LineList.csv or something similar.
+    """
     nu_list = frame.filter(regex=r"nu_\d*$").values.flatten().tolist()
     sw_list = frame.filter(regex=r"sw_\d*$").values.flatten().tolist()
     # Make sure nu_list and sw_list are not empty, otherwise will overide default with empty
@@ -522,7 +651,7 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
         **line_kwargs,
         constraint_dict=constraint_dict
     )
-    # Freeze somethings and let others vary
+    # Freeze some things and let others vary
     for name, val in vary_dict.items():
         if isinstance(lineshape.params[name], gpflow.Parameter):
             gpflow.set_trainable(lineshape.params[name], val)
@@ -530,6 +659,8 @@ def lineshape_from_dataframe(frame, limit_factor_dict={}, line_kwargs={}):
 
 
 class Etalon(Base_Mean_Func):
+    """Class to represent etalons that contribute to experimental spectra.
+    """
     def __init__(
         self,
         amplitude,
@@ -540,6 +671,20 @@ class Etalon(Base_Mean_Func):
         dset_list=[SpectralDataInfo()],
         fittable=True,
     ):
+        """
+Creates Etalon class object. 
+    Inputs:
+        amplitude - amplitudes of etalons (can have one for each dataset)
+        period - periods of etalons
+        phase - phases of etalons
+        ref_wavenumber - reference wavenumbers that shift the sine functions
+        noise_scale_factor - (1.0) scale factor helpful for fitting GPR models by setting the
+                             noise scale to be approximately 1
+        dset_list - list of SpectralDataInfo objects to specify information about datasets
+        fittable - (True) whether or not to make parameters fittable gpflow parameter objects
+    Outputs:
+        Etalon class object
+        """
         super().__init__()
         # Note that if multidimensional, assumes different values for different datasets
         self.params = {}
@@ -559,6 +704,14 @@ class Etalon(Base_Mean_Func):
         self.dset_list = dset_list
 
     def __call__(self, xTP):
+        """Predicts etalons given wavenumbers, temperatures, pressures, and dataset indices.
+    Inputs:
+        xTP - array with columns of wavenumber, temperature, pressure, and dataset index; rows
+              represent a single data point at which etalons will be calculated; only uses
+              wavenumbers and dataset indices
+    Outputs:
+        etalon_model - etalon (sine function) values at input conditions
+        """
         xTP = np.array(xTP, dtype=np.float64)
         wavenumbers = xTP[:, 0]
         dInds = np.array(xTP[:, 3], dtype=np.int32)
@@ -584,9 +737,25 @@ class Etalon(Base_Mean_Func):
 
 
 class Baseline(Base_Mean_Func):
+    """Class to define quadratic polynomial baselines for spectra.
+    """
     def __init__(
         self, c0, c1, c2, ref_wavenumber, noise_scale_factor=1.0, fittable=True, dset_list=[SpectralDataInfo()],
     ):
+        """
+Creates Baseline class object. 
+    Inputs:
+        c0 - offset or constant polynomial coefficients (can have one for each dataset)
+        c1 - linear polynomial coefficients
+        c2 - quadratic polynomial coefficients
+        ref_wavenumber - reference wavenumbers that shift the polynomials
+        noise_scale_factor - (1.0) scale factor helpful for fitting GPR models by setting the
+                             noise scale to be approximately 1
+        dset_list - list of SpectralDataInfo objects to specify information about datasets
+        fittable - (True) whether or not to make parameters fittable gpflow parameter objects
+    Outputs:
+        Baseline class object
+        """
         super().__init__()
         # Note that if multidimensional, assumes different values for different datasets
         self.params = {}
@@ -606,6 +775,14 @@ class Baseline(Base_Mean_Func):
         self.dset_list = dset_list
 
     def __call__(self, xTP):
+        """Predicts baseline given wavenumbers, temperatures, pressures, and dataset indices.
+    Inputs:
+        xTP - array with columns of wavenumber, temperature, pressure, and dataset index; rows
+              represent a single data point at which baseline will be calculated; only uses
+              wavenumbers and dataset indices
+    Outputs:
+        baseline_model - baseline (2nd order polynomial) values at input conditions
+        """
         xTP = np.array(xTP, dtype=np.float64)
         wavenumbers = xTP[:, 0]
         dInds = np.array(xTP[:, 3], dtype=np.int32)

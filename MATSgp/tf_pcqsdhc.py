@@ -31,6 +31,8 @@ pipwoeronehalf = np.float64(0.564189583547756e0)
 
 # ------------------ complex probability function -----------------------
 def cpf3(X, Y):
+    #Not exactly sure what this function does...
+    #But seems to perform numerical evaluation of a function by finite series sum
     zm1 = zone / tf.complex(X, Y)  # maybe redundant
     zm2 = tf.square(zm1)
     zsum = zone
